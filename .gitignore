@@ -1,0 +1,4 @@
+.vscode
+*.o
+main
+actual_output.txt
