@@ -47,6 +47,18 @@ private:
         for (const auto& ch : line) {
             if (ch == ' ') continue;
             if (isdigit(ch)) {
+                if (!var.empty() && !isNumber(var)) {
+                    ret.push_back(var);
+                    vars[var] = 0;
+                    var = "";
+                }
+                var += ch;
+            }
+            else if (isalpha(ch)) {
+                if(!var.empty() && isNumber(var)) {
+                    ret.push_back(var);
+                    var = "";
+                }
                 var += ch;
             }
             else {
