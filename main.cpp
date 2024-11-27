@@ -8,13 +8,7 @@
 
 class Interpreter {
 private:
-    std::vector<char> supportedChars;
-    std::unordered_map<std::string, int> vars;
-
-    bool isOperator(char ch) const {
-        return ch == '+' || ch == '-' || ch == '*' || ch == '/' || ch == '^';
-    }
-
+    std::vector<char> specialStrings = {'=', '(', ')', '#', '+', '-', '*', '/', '^', '<', '>', '!'};
     std::unordered_map<char, int> precedence = {
         {'+', 1},
         {'-', 1},
@@ -22,9 +16,14 @@ private:
         {'/', 2},
         {'^', 3}
     };
+    std::unordered_map<std::string, double> vars;
 
-    bool supported(char ch) const {
-        for (const auto& elt : supportedChars) {
+    bool isOperator(char ch) const {
+        return ch == '+' || ch == '-' || ch == '*' || ch == '/' || ch == '^';
+    }
+
+    bool isSpecial(char ch) const {
+        for (const auto& elt : specialStrings) {
             if (ch == elt) {
                 return true;
             }
@@ -41,53 +40,21 @@ private:
         return true;
     }
 
-    std::vector<std::string> splitTokens(const std::string& line) {
-        std::vector<std::string> ret;
-        std::string var = "";
-        for (const auto& ch : line) {
-            if (ch == ' ') continue;
-            if (isdigit(ch)) {
-                if (!var.empty() && !isNumber(var)) {
-                    ret.push_back(var);
-                    vars[var] = 0;
-                    var = "";
-                }
-                var += ch;
-            }
-            else if (isalpha(ch)) {
-                if(!var.empty() && isNumber(var)) {
-                    ret.push_back(var);
-                    var = "";
-                }
-                var += ch;
-            }
-            else {
-                if(!var.empty()) {
-                    ret.push_back(var);
-                    var.clear();
-                }
-                ret.push_back(std::string(1, ch));
-            }
-        }
-        if (!var.empty()) {
-            ret.push_back(var);
-        }
-       
-        return ret;
-    }
-
-    int applyOp(int a, int b, char op) {
+    double applyOp(double a, double b, char op) {
         switch (op) {
             case '+': return a + b;
             case '-': return a - b;
             case '*': return a * b;
             case '/': return a / b;
             case '^': return std::pow(a, b);
-            default: throw std::runtime_error("Invalid operator");
+            default: throw std::runtime_error("Invalid operator at line " + std::to_string(pc));
         }
     }
 
-    void processTopOperator(std::stack<int>& values, std::stack<char>& ops) {
+    void processTopOperator(std::stack<double>& values, std::stack<char>& ops) {
+        if (values.size() < 2) {
+            throw std::runtime_error("Invalid math expression at line " + std::to_string(pc + 1));
+        }
         double b = values.top();
         values.pop();
         double a = values.top();
@@ -97,19 +64,56 @@ private:
         values.push(applyOp(a, b, op));
     }
 
+    // 0 means false, 1 means true
+    double boolEvaluate(const std::vector<std::string>& tokens, size_t& begin, size_t& end) {
+        size_t idx = 0;
+        for (size_t i = begin; i < end; ++i) {
+            if (tokens[i] == ">" || tokens[i] == "<") {
+                // < or > are at the beginning / end of expression
+                if (i == begin || i == end) {
+                    throw std::runtime_error("Could not evaluate boolean expression at line " + std::to_string(pc + 1));
+                }
+                idx = i;
+                break;
+            }
+        }
+
+        // Base case
+        if (idx == 0) {
+            // No bool operator found
+            return mathEvaluate(tokens, begin, end);
+        }
+
+        // Recurse
+        size_t lhs_begin = begin;
+        size_t lhs_end = idx;
+        size_t rhs_begin = idx + 1;
+        size_t rhs_end = end;
+
+        double lhs = boolEvaluate(tokens, lhs_begin, lhs_end);
+        double rhs = boolEvaluate(tokens, rhs_begin, rhs_end);
+
+        if (tokens[idx] == "<") {
+            return lhs < rhs;
+        }
+        else {
+            return lhs > rhs;
+        }
+    }
+
     // For math expression only
-    int combine(const std::vector<std::string>& tokens, size_t& pos) {
-        std::stack<int> values;
+    double mathEvaluate(const std::vector<std::string>& tokens, size_t& begin, size_t& end) {
+        std::stack<double> values;
         std::stack<char> ops;
 
-        while (pos < tokens.size()) {
-            std::string token = tokens[pos++];
+        while (begin < end) {
+            std::string token = tokens[begin++];
             if (isNumber(token)) {
-                values.push(std::stoi(token));
+                values.push(std::stod(token));
             }
             else if (token == "(") {
                 // Recursively calculate expressions in parentheses
-                values.push(combine(tokens, pos));
+                values.push(mathEvaluate(tokens, begin, end));
             }
             else if (token == ")") {
                 break;
@@ -120,8 +124,11 @@ private:
                 }
                 ops.push(token[0]);
             }
+            else if(vars.find(token) != vars.end()) {
+                values.push(vars[token]);
+            }
             else {
-                throw std::runtime_error("Could not parse mathematical expression");
+                throw std::runtime_error("Invalid math expression at line " + std::to_string(pc + 1));
             }
         }
 
@@ -129,24 +136,99 @@ private:
         while (!ops.empty()) {
             processTopOperator(values, ops);
         }
+        if(values.size() != 1) {
+            throw std::runtime_error("Invalid math expression at line " + std::to_string(pc + 1));
+        }
         return values.top();
     }
 
 public:
-    Interpreter() {
-        supportedChars = {'=', '(', ')', '#'};
+    std::vector<std::vector<std::string>> instr;
+    int pc = 0;
+
+    Interpreter() {}
+
+    void parse(const std::vector<std::string>& tokens) {
+        for (const auto& token : tokens) {
+            std::cout << token << ' ';
+        }
+        std::cout << std::endl;
+        if (tokens.empty() || tokens[0] == "#") {
+            ++pc;
+            return;
+        }
+        if(tokens[0] == "end") {
+            // Go back to closest while or if
+            int old_pc = pc;
+            while (pc >= 0) {
+                if(instr[pc][0] == "while") {
+                    // ++pc;
+                    return;
+                } 
+                if (instr[pc][0] == "if") {
+                    pc = old_pc + 1;
+                    return;
+                }
+                --pc;
+            }
+            throw std::runtime_error("End doesn't have a matching statement: line " + std::to_string(old_pc + 1));
+        }
+        
+        if (tokens.size() < 2 || (isNumber(tokens[0]) && tokens[1] == "=")) {
+            throw std::runtime_error("Could not parse line " + std::to_string(pc + 1));
+        }
+
+        size_t begin = 0;
+        size_t end = tokens.size();
+        if(tokens[1] == "=") {
+            begin = 2;
+            vars[tokens[0]] = mathEvaluate(tokens, begin, end);
+            std::cout << vars[tokens[0]] << std::endl;
+        }
+        else if (tokens[0] == "while") {
+            begin = 1;
+            if (!boolEvaluate(tokens, begin, end)) {
+                // jump to corresponding end - account for nested if / while
+                std::stack<bool> keywords;
+
+            }
+        }
+        else if(tokens[0] == "if") {
+            begin = 1;
+            // bool cond = boolEvaluate(tokens, begin, end);
+        }
+        else {
+            std::cout << mathEvaluate(tokens, begin, end) << std::endl;
+        }
+        ++pc;
     }
 
-    void evaluate(std::string line) {
-        std::cout << "Evaluating: " << line << std::endl;
-        std::vector<std::string> tokens = splitTokens(line);
-        // for (const auto& token : tokens) {
-        //     std::cout << token << ' ';
-        // }
-        // std::cout << std::endl;
-        if (tokens.empty() || tokens[0] == "#") return;
-        size_t pos = 0;
-        std::cout << combine(tokens, pos) << std::endl;
+    std::vector<std::string> splitTokens(const std::string& line) {
+        std::vector<std::string> tokens;
+        std::string token = "";
+        for (const auto& ch : line) {
+            if (ch == ' ') {
+                if (!token.empty()) {
+                    tokens.push_back(token);
+                    token.clear();
+                }
+            }
+            else if (isSpecial(ch)) {
+                if (!token.empty()) {
+                    tokens.push_back(token);
+                    token.clear();
+                }
+                tokens.push_back(std::string(1, ch));
+            }
+            else {
+                token += ch;
+            }
+        }
+        if (!token.empty()) {
+            tokens.push_back(token);
+        }
+       
+        return tokens;
     }
 };
 
@@ -159,15 +241,19 @@ int main() {
     while(getline(std::cin, line)) {
         lines.push(line);
     }
+    // Tokenize the whole program
     while(!lines.empty()) {
-        // TODO: more processing here
+        i.instr.emplace_back(i.splitTokens(lines.front()));
+        lines.pop();
+    }
+    while (i.pc < (int) i.instr.size()) {
         try {
-            i.evaluate(lines.front());
+            i.parse(i.instr[i.pc]);
         }
         catch (std::runtime_error& e) {
             std::cout << e.what() << std::endl;
             exit(1);
         }
-        lines.pop();
+
     }
 }
