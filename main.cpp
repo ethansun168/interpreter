@@ -153,16 +153,19 @@ public:
             std::cout << token << ' ';
         }
         std::cout << std::endl;
-        if (tokens.empty() || tokens[0] == "#") {
+
+        size_t begin = 0;
+        size_t end = tokens.size();
+
+        if (tokens[0] == "#" || tokens[0] == "") {
             ++pc;
             return;
         }
-        if(tokens[0] == "end") {
+        else if(tokens[0] == "end") {
             // Go back to closest while or if
             int old_pc = pc;
             while (pc >= 0) {
                 if(instr[pc][0] == "while") {
-                    // ++pc;
                     return;
                 } 
                 if (instr[pc][0] == "if") {
@@ -174,17 +177,15 @@ public:
             throw std::runtime_error("End doesn't have a matching statement: line " + std::to_string(old_pc + 1));
         }
         
-        if (tokens.size() < 2 || (isNumber(tokens[0]) && tokens[1] == "=")) {
-            throw std::runtime_error("Could not parse line " + std::to_string(pc + 1));
-        }
+        // if (tokens.size() < 2 || (isNumber(tokens[0]) && tokens[1] == "=")) {
+        //     throw std::runtime_error("Could not parse line " + std::to_string(pc + 1));
+        // }
 
-        size_t begin = 0;
-        size_t end = tokens.size();
-        if(tokens[1] == "=") {
-            begin = 2;
-            vars[tokens[0]] = mathEvaluate(tokens, begin, end);
-            std::cout << vars[tokens[0]] << std::endl;
-        }
+        // if(tokens[1] == "=") {
+        //     begin = 2;
+        //     vars[tokens[0]] = mathEvaluate(tokens, begin, end);
+        //     std::cout << vars[tokens[0]] << std::endl;
+        // }
         else if (tokens[0] == "while") {
             begin = 1;
             if (!boolEvaluate(tokens, begin, end)) {
@@ -196,6 +197,25 @@ public:
         else if(tokens[0] == "if") {
             begin = 1;
             // bool cond = boolEvaluate(tokens, begin, end);
+        }
+        else if (tokens.size() == 1) {
+            // Print the value of the token
+            if(vars.find(tokens[0]) != vars.end()) {
+                std::cout << vars[tokens[0]] << std::endl;
+            }
+            else {
+                throw std::runtime_error("Variable " + tokens[0] + " not found");
+            }
+        }
+        // tokens.size() > 1
+        else if (tokens[1] == "=") {
+            if (!isNumber(tokens[0])) {
+                begin = 2;
+                vars[tokens[0]] = mathEvaluate(tokens, begin, end);
+            }
+            else {
+                throw std::runtime_error("Cannot assign to a number");
+            }
         }
         else {
             std::cout << mathEvaluate(tokens, begin, end) << std::endl;
@@ -224,8 +244,12 @@ public:
                 token += ch;
             }
         }
+
         if (!token.empty()) {
             tokens.push_back(token);
+        }
+        else if (tokens.empty()) {
+            tokens.push_back("");
         }
        
         return tokens;
