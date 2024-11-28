@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <math.h>
 #include <exception>
 #include <queue>
@@ -142,6 +143,25 @@ private:
         return values.top();
     }
 
+    int findEnd(int pc) {
+        // jump to corresponding end - account for nested if / while
+        std::stack<bool> keywords;
+        while (pc < (int) instr.size()) {
+            ++pc;
+            if(keywords.empty() && instr[pc][0] == "end") {
+                // found
+                return ++pc;
+            }
+            if (instr[pc][0] == "while" || instr[pc][0] == "if") {
+                keywords.push(1);
+            }
+            else if(instr[pc][0] == "end") {
+                keywords.pop();
+            }
+        }
+        throw std::runtime_error("No matching end found");
+    }
+
 public:
     std::vector<std::vector<std::string>> instr;
     int pc = 0;
@@ -149,10 +169,12 @@ public:
     Interpreter() {}
 
     void parse(const std::vector<std::string>& tokens) {
-        for (const auto& token : tokens) {
-            std::cout << token << ' ';
-        }
-        std::cout << std::endl;
+        assert(tokens.size() >= 1);
+        // std::cout << "Tokens: ";
+        // for (const auto& token : tokens) {
+        //     std::cout << token << ' ';
+        // }
+        // std::cout << std::endl;
 
         size_t begin = 0;
         size_t end = tokens.size();
@@ -162,45 +184,40 @@ public:
             return;
         }
         else if(tokens[0] == "end") {
-            // Go back to closest while or if
+            // Go back to corresponding while or if
             int old_pc = pc;
+            std::stack<bool> keywords;
             while (pc >= 0) {
-                if(instr[pc][0] == "while") {
-                    return;
-                } 
-                if (instr[pc][0] == "if") {
-                    pc = old_pc + 1;
+                --pc;
+                if (keywords.empty() && (instr[pc][0] == "while" || instr[pc][0] == "if")) {
+                    // found
+                    if(instr[pc][0] == "if") {
+                        // jump to pc + 1
+                        pc = old_pc + 1;
+                    }
                     return;
                 }
-                --pc;
+                else if (instr[pc][0] == "end") {
+                    keywords.push(1);
+                }
+                else if (instr[pc][0] == "while" || instr[pc][0] == "if") {
+                    keywords.pop();
+                }
             }
             throw std::runtime_error("End doesn't have a matching statement: line " + std::to_string(old_pc + 1));
         }
-        
-        // if (tokens.size() < 2 || (isNumber(tokens[0]) && tokens[1] == "=")) {
-        //     throw std::runtime_error("Could not parse line " + std::to_string(pc + 1));
-        // }
-
-        // if(tokens[1] == "=") {
-        //     begin = 2;
-        //     vars[tokens[0]] = mathEvaluate(tokens, begin, end);
-        //     std::cout << vars[tokens[0]] << std::endl;
-        // }
-        else if (tokens[0] == "while") {
+        else if (tokens[0] == "while" || tokens[0] == "if") {
             begin = 1;
             if (!boolEvaluate(tokens, begin, end)) {
-                // jump to corresponding end - account for nested if / while
-                std::stack<bool> keywords;
-
+                pc = findEnd(pc);
             }
-        }
-        else if(tokens[0] == "if") {
-            begin = 1;
-            // bool cond = boolEvaluate(tokens, begin, end);
         }
         else if (tokens.size() == 1) {
             // Print the value of the token
-            if(vars.find(tokens[0]) != vars.end()) {
+            if (isNumber(tokens[0])) {
+                std::cout << tokens[0] << std::endl;
+            }
+            else if(vars.find(tokens[0]) != vars.end()) {
                 std::cout << vars[tokens[0]] << std::endl;
             }
             else {
