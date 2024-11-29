@@ -19,6 +19,8 @@ private:
     };
     std::unordered_map<std::string, double> vars;
 
+    std::unordered_map<int, int> endMap;
+
     bool isOperator(char ch) const {
         return ch == '+' || ch == '-' || ch == '*' || ch == '/' || ch == '^';
     }
@@ -143,25 +145,6 @@ private:
         return values.top();
     }
 
-    int findEnd(int pc) {
-        // jump to corresponding end - account for nested if / while
-        std::stack<bool> keywords;
-        while (pc < (int) instr.size()) {
-            ++pc;
-            if(keywords.empty() && instr[pc][0] == "end") {
-                // found
-                return ++pc;
-            }
-            if (instr[pc][0] == "while" || instr[pc][0] == "if") {
-                keywords.push(1);
-            }
-            else if(instr[pc][0] == "end") {
-                keywords.pop();
-            }
-        }
-        throw std::runtime_error("No matching end found");
-    }
-
 public:
     std::vector<std::vector<std::string>> instr;
     int pc = 0;
@@ -185,31 +168,16 @@ public:
         }
         else if(tokens[0] == "end") {
             // Go back to corresponding while or if
-            int old_pc = pc;
-            std::stack<bool> keywords;
-            while (pc >= 0) {
-                --pc;
-                if (keywords.empty() && (instr[pc][0] == "while" || instr[pc][0] == "if")) {
-                    // found
-                    if(instr[pc][0] == "if") {
-                        // jump to pc + 1
-                        pc = old_pc + 1;
-                    }
-                    return;
-                }
-                else if (instr[pc][0] == "end") {
-                    keywords.push(1);
-                }
-                else if (instr[pc][0] == "while" || instr[pc][0] == "if") {
-                    keywords.pop();
-                }
+            if (instr[endMap[pc]][0] == "while") {
+                // jump to while instr
+                pc = endMap[pc];
+                return;
             }
-            throw std::runtime_error("End doesn't have a matching statement: line " + std::to_string(old_pc + 1));
         }
         else if (tokens[0] == "while" || tokens[0] == "if") {
             begin = 1;
             if (!boolEvaluate(tokens, begin, end)) {
-                pc = findEnd(pc);
+                pc = endMap[pc] + 1;
             }
         }
         else if (tokens.size() == 1) {
@@ -271,6 +239,30 @@ public:
        
         return tokens;
     }
+
+    void scanEnd() {
+        std::stack<int> lineNumbers;
+        int lineNumber = 0;
+        while (lineNumber < (int) instr.size()) {
+            if (instr[lineNumber][0] == "while" || instr[lineNumber][0] == "if") {
+                lineNumbers.push(lineNumber);
+            }
+            else if(instr[lineNumber][0] == "end") {
+                if (lineNumbers.empty()) {
+                    throw std::runtime_error("Invalid program");
+                }
+                // update endMap
+                endMap[lineNumber] = lineNumbers.top();
+                endMap[lineNumbers.top()] = lineNumber;
+                lineNumbers.pop();
+            }
+            ++lineNumber;
+        }
+        if (!lineNumbers.empty()) {
+            throw std::runtime_error("Invalid program");
+        }
+    }
+
 };
 
 int main() {
@@ -287,6 +279,17 @@ int main() {
         i.instr.emplace_back(i.splitTokens(lines.front()));
         lines.pop();
     }
+
+    // Fill the endMap
+    try {
+        i.scanEnd();
+    }
+    catch (std::runtime_error& e) {
+        std::cout << e.what() << std::endl;
+        exit(1);
+    }
+
+    // Run the program
     while (i.pc < (int) i.instr.size()) {
         try {
             i.parse(i.instr[i.pc]);
